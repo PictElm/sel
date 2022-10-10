@@ -27,9 +27,9 @@ pub enum Operator {
 }
 
 #[derive(Debug, Clone)]
-pub enum Token {
+pub enum Token<'a> {
     Name(String),
-    Literal(Value),
+    Literal(Value<'a>),
     Operator(Operator),
     // SubScript(Vec<Token>),
     SubscriptBegin,
@@ -43,7 +43,7 @@ fn lex_string<'a>(script: &'a String) -> Lexer<'a> {
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
+    type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.peek() {
@@ -135,20 +135,20 @@ impl<'a> Iterator for Lexer<'a> {
     } // fn next
 } // impl Iterator for Lexer
 
-pub trait Lex {
+pub trait Lex<'a> {
     // YYY: may seal it, as well as the Lexer struct
-    type TokenIter: Iterator<Item = Token>;
+    type TokenIter: Iterator<Item = Token<'a>>;
     fn lex(self) -> Self::TokenIter;
 }
 
-impl<'a> Lex for &'a String {
+impl<'a> Lex<'a> for &'a String {
     type TokenIter = Lexer<'a>;
     fn lex(self) -> Self::TokenIter {
         lex_string(self)
     }
 }
-impl Lex for Vec<Token> {
-    type TokenIter = vec::IntoIter<Token>;
+impl<'a> Lex<'a> for Vec<Token<'a>> {
+    type TokenIter = vec::IntoIter<Token<'a>>;
     fn lex(self) -> Self::TokenIter {
         self.into_iter()
     }
@@ -157,7 +157,7 @@ impl Lex for Vec<Token> {
 #[derive(Clone)]
 pub struct Parser<'a, T, L>(Peekable<T::TokenIter>, &'a L)
 where
-    T: Lex,
+    T: Lex<'a>,
     L: PreludeLookup;
 
 pub fn parse_string<'a, L>(script: &'a String, prelude: &'a L) -> Parser<'a, &'a String, L>
@@ -166,15 +166,15 @@ where
 {
     Parser(script.lex().peekable(), prelude)
 }
-fn parse_vec<'a, L>(tokens: Vec<Token>, prelude: &'a L) -> Parser<'a, Vec<Token>, L>
+fn parse_vec<'a, L>(tokens: Vec<Token<'a>>, prelude: &'a L) -> Parser<'a, Vec<Token<'a>>, L>
 where
     L: PreludeLookup,
 {
     Parser(tokens.lex().peekable(), prelude)
 }
 
-impl FromIterator<Value> for Application {
-    fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
+impl<'a> FromIterator<Value<'a>> for Application<'a> {
+    fn from_iter<T: IntoIterator<Item = Value<'a>>>(iter: T) -> Self {
         Application {
             funcs: iter
                 .into_iter()
@@ -194,10 +194,10 @@ impl FromIterator<Value> for Application {
 
 impl<'a, T, L> Parser<'a, T, L>
 where
-    T: Lex,
+    T: Lex<'a>,
     L: PreludeLookup,
 {
-    fn as_value(self) -> Value {
+    fn as_value(self) -> Value<'a> {
         let fs: Vec<Value> = self.collect();
 
         if 1 == fs.len() {
@@ -299,15 +299,15 @@ where
 
 impl<'a, T, L> Iterator for Parser<'a, T, L>
 where
-    T: Lex,
+    T: Lex<'a>,
     L: PreludeLookup,
 {
-    type Item = Value;
+    type Item = Value<'a>;
 
     /// script ::= _elements1
     /// _elements1 ::= element {',' element} [',']
     /// element ::= atom {atom}
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&'a mut self) -> Option<Self::Item> {
         match self.next_atom() {
             None => None,
 
@@ -329,12 +329,12 @@ where
 }
 
 // YYY: more private fields
-pub struct Application {
-    pub funcs: Vec<Function>,
+pub struct Application<'a> {
+    pub funcs: Vec<Function<'a>>,
     pub env: (),
 }
 
-impl Application {
+impl Application<'_> {
     pub fn apply(&self, line: String) -> String {
         self.funcs
             .iter()

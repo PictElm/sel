@@ -5,7 +5,7 @@ use std::{fmt, slice, vec};
 //       as such, the actual output for a type of
 //       value is through Value::as_text
 
-#[derive(Clone)] //Debug)]
+#[derive(Clone, Debug)]
 pub enum Type {
     Num,
     Str,
@@ -14,72 +14,83 @@ pub enum Type {
     Unk(String),
 }
 
-#[derive(Clone)] //Debug)]
-pub enum Value {
+#[derive(Clone, Debug)]
+pub enum Value<'a> {
     Num(Number),
     Str(String),
-    Lst(List),
-    Fun(Function),
+    Lst(List<'a>),
+    Fun(Function<'a>),
 }
 
 pub type Number = f32;
 
 // YYY: more private fields
 #[derive(Clone)] //Debug)]
-pub struct List {
+pub struct List<'a> {
     pub has: Type,
-    items: Box<dyn Some>,
+    items: Box<dyn IntoList<'a> + 'a>,
 } // @see: https://stackoverflow.com/questions/30353462/how-to-clone-a-struct-storing-a-boxed-trait-object
 
-// type Idk = Iterator<Item = Value>;
 
-trait Some: SomeClone {}
-trait SomeClone { fn clone_box(&self) -> Box<dyn Some>; }
-
-impl<T> SomeClone for T
-where
-    T: 'static + Some + Clone,
-{
-    fn clone_box(&self) -> Box<dyn Some> {
-        Box::new(self.clone())
-    }
+trait IntoList<'a>: Iterator<Item = Value<'a>> {
 }
-impl Clone for Box<dyn Some> {
-    fn clone(&self) -> Box<dyn Some> {
-        self.clone_box()
-    }
+impl Clone for Box<dyn IntoList<'_>> {
+    fn clone(&self) -> Self { todo!() }
+}
+impl<'a, T> IntoList<'a> for T where T: Iterator<Item = Value<'a>> {
+}
+struct ListIntoIter<'a> { idk: &'a i32 }
+impl<'a> Iterator for ListIntoIter<'a> {
+    type Item = Value<'a>;
+    fn next(&mut self) -> Option<Self::Item> { todo!() }
 }
 
-impl<T> Some for T
-where
-    T: Iterator<Item = Value> + Clone + 'static,
-{}
+// // type Idk = Iterator<Item = Value>;
+// trait Some: SomeClone {}
+// trait SomeClone: Iterator<Item = Value> { fn clone_box(&self) -> Box<dyn Some>; }
+// impl<T> SomeClone for T
+// where
+//     T: 'static + Some + Clone,
+// {
+//     fn clone_box(&self) -> Box<dyn Some> {
+//         Box::new(self.clone())
+//     }
+// }
+// impl Clone for Box<dyn Some> {
+//     fn clone(&self) -> Box<dyn Some> {
+//         self.clone_box()
+//     }
+// }
+// impl<T> Some for T
+// where
+//     T: Iterator<Item = Value> + Clone + 'static,
+// {}
 
 // YYY: more private fields
 #[derive(Clone)]
-pub struct Function {
+pub struct Function<'a> {
     pub name: String,
     pub maps: (Type, Type),
-    pub args: Vec<Value>,            // YYY: would like it private
+    pub args: Vec<Value<'a>>,            // YYY: would like it private
     pub func: fn(Function) -> Value, // YYY: would like it private (maybe `fn(Function, Vec<Value>) -> Value`)
 }
 
-impl List {
+impl List<'_> {
     // pub fn new<T: Iterator<Item = Value>>(has: Type, items: T) -> List {
-    pub fn new(has: Type, items: impl Iterator<Item = Value> + Clone) -> List {
+    pub fn new<'a>(has: Type, items: impl IntoList<'a>+'a) -> List<'a> {
         List { has, items: Box::new(items) }
     }
 }
 
-impl Iterator for List {
-    type Item = Value;
+impl<'a> Iterator for List<'a> {
+    type Item = Value<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.items.next()
     }
 }
 
-impl Function {
+impl Function<'_> {
     pub fn apply(mut self, arg: Value) -> Value {
         let given_type = arg.typed();
 
@@ -100,22 +111,24 @@ impl Function {
     }
 }
 
-impl Value {
-    pub fn as_text(&self) -> String {
+impl Value<'_> {
+    pub fn as_text(self) -> String {
         // ZZZ: consumes, so cannot borrow
         match self {
             Value::Num(n) => n.to_string(),
             Value::Str(s) => s.to_string(),
             Value::Lst(a) => match &a.has {
                 Type::Num | Type::Str | Type::Unk(_) => a // XXX: list of unk
-                    .iter()
+                    // .iter()
                     .map(Value::as_text)
+                    // .map(|it| it.as_text())
                     .collect::<Vec<String>>() // ZZZ: inf hang
                     .join(" "),
                 Type::Lst(t) => match **t {
                     Type::Num | Type::Str | Type::Unk(_) => a // XXX: list of unk
-                        .iter()
+                        // .iter()
                         .map(Value::as_text)
+                        // .map(|it| it.as_text())
                         .collect::<Vec<String>>() // ZZZ: inf hang
                         .join("\n"),
                     _ => {
@@ -139,7 +152,7 @@ impl Value {
         }
     }
 
-    pub fn coerse(self, to: Type) -> Option<Value> {
+    pub fn coerse(self, to: Type) -> Option<Value<'static>> { // ZZZ
         if to == self.typed() {
             return Some(self.clone());
         }
@@ -187,7 +200,7 @@ impl Value {
     } // fn coerse
 
     /*pub?*/
-    fn coerse_or_keep(self, to: Type) -> Value {
+    fn coerse_or_keep(self, to: Type) -> Value<'static> { // ZZZ
         let backup = self.clone(); // could avoid this by failing early
         self.coerse(to).unwrap_or(backup)
     }
@@ -228,7 +241,7 @@ impl fmt::Display for Type {
     }
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Num(n) => write!(f, "{n}"),
@@ -236,7 +249,7 @@ impl fmt::Display for Value {
             Value::Lst(a) => write!(
                 f,
                 "@{{{}}}",
-                a.iter()
+                a.clone()//.iter()
                     .map(|v| match v {
                         Value::Str(s) => s.clone(),
                         Value::Lst(_) => v.to_string()[1..].to_string(),
@@ -270,24 +283,34 @@ impl fmt::Display for Value {
     }
 }
 
-impl fmt::Debug for Function {
+impl fmt::Debug for List<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Function({:?}, {:?}, {:?}, {:?})",
-            self.name, self.maps, self.args, self.func
+            "List({:?}, )", //{:?}, {:?})",
+            self.has, //self.items
+        )
+    }
+}
+
+impl fmt::Debug for Function<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Function({:?}, {:?}, )", //{:?}, {:?})",
+            self.name, self.maps, //self.args, self.func
         )
     }
 }
 
 macro_rules! impl_from_into_value {
     ($type:ident <-> $other:ty: from: $from:expr; into: $into:expr;) => {
-        impl From<$other> for Value {
+        impl From<$other> for Value<'_> {
             fn from(o: $other) -> Self {
                 Value::$type(($from)(o))
             }
         }
-        impl From<Value> for $other {
+        impl From<Value<'_>> for $other {
             fn from(v: Value) -> Self {
                 match v {
                     Value::$type(u) => ($into)(u),
@@ -349,12 +372,12 @@ impl_from_into_value! { Lst <-> Vec<&str>:
     into: |u: List| u.into_iter().map(|i| i.into()).collect();
 }
 
-impl_from_into_value! { Lst <-> List:
+impl_from_into_value! { Lst <-> List<'_>:
     from: |o| o;
     into: |u| u;
 }
 
-impl_from_into_value! { Fun <-> Function:
+impl_from_into_value! { Fun <-> Function<'_>:
     from: |o| o;
     into: |u| u;
 }
@@ -366,31 +389,31 @@ impl_from_into_value! { Fun <-> Function:
 //     }
 // }
 
-impl FromIterator<Number> for Value {
+impl FromIterator<Number> for Value<'_> {
     fn from_iter<T: IntoIterator<Item = Number>>(iter: T) -> Self {
         Value::Lst(List::new(Type::Num, iter.into_iter().map(Value::from)))
     }
 }
 
-impl FromIterator<String> for Value {
+impl FromIterator<String> for Value<'_> {
     fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
         Value::Lst(List::new(Type::Str, iter.into_iter().map(Value::from)))
     }
 }
 
-impl<'a> FromIterator<&'a str> for Value {
+impl<'a> FromIterator<&'a str> for Value<'_> {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
         Value::Lst(List::new(Type::Str, iter.into_iter().map(Value::from)))
     }
 }
 
-impl IntoIterator for Value {
-    type Item = Value;
-    type IntoIter = ListIntoIter;
+impl<'a> IntoIterator for Value<'a> {
+    type Item = Value<'a>;
+    type IntoIter = ListIntoIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            Value::Lst(u) => u.into_iter(),
+            Value::Lst(u) => todo!(), //u.into_iter(),
             _ => unreachable!(),
         }
     }
@@ -406,7 +429,7 @@ impl IntoIterator for Value {
 //         // a question is does using a place-holder type fundamentaly breaks something else...
 //     }
 // }
-impl From<Value> for Vec<Value> {
+impl From<Value<'_>> for Vec<Value<'_>> {
     fn from(v: Value) -> Self {
         match v {
             Value::Lst(a) => a.into_iter().collect(),
@@ -415,13 +438,13 @@ impl From<Value> for Vec<Value> {
     }
 }
 
-impl<const L: usize> From<[Number; L]> for Value {
+impl<const L: usize> From<[Number; L]> for Value<'_> {
     fn from(o: [Number; L]) -> Self {
         Value::Lst(List::new(Type::Num, o.into_iter().map(Value::from)))
     }
 }
 
-impl<const L: usize> From<[String; L]> for Value {
+impl<const L: usize> From<[String; L]> for Value<'_> {
     fn from(o: [String; L]) -> Self {
         Value::Lst(List::new(Type::Str, o.into_iter().map(Value::from)))
     }
