@@ -1,4 +1,4 @@
-use std::{fmt, slice, vec};
+use std::{fmt, vec, mem};
 
 // NOTE: `Debug` is kept for rust-level debugging,
 //       `Display` is used for sel-level debugging
@@ -28,7 +28,7 @@ pub type Number = f32;
 #[derive(Debug, Clone)]
 pub struct List {
     pub has: Type,
-    items: Vec<Value>,
+    items: usize, //Vec<Value>,
 }
 
 // YYY: more private fields
@@ -41,19 +41,34 @@ pub struct Function {
 }
 
 impl List {
-    pub fn new<T: Iterator<Item = Value>>(has: Type, items: T) -> List {
+    pub fn new<T: Iterator<Item = Value>>(has: Type, items: &Box<T>) -> List {
+        let crap = items as *const _ as usize;
+        println!("here: {crap:?}");
+        // unsafe {
+        //     println!("before");
+        //     let fart: &mut T = mem::transmute(crap as *const T);
+        //     let boob = fart.next();
+        //     println!("   and..? {boob:?}");
+        // }
         List {
             has,
-            items: items.collect(),
+            items: crap, //items.collect(),
         }
     }
 }
 
+trait Crap: Iterator<Item=Value> + Clone {}
+
 impl IntoIterator for List {
     type Item = Value;
-    type IntoIter = vec::IntoIter<Value>;
+    type IntoIter = Box<dyn Iterator<Item=Value>>; //vec::IntoIter<Value>;
     fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
+        unsafe {
+            let it: &mut Box<dyn Iterator<Item=Value>> = mem::transmute(self.items as *const Box<dyn Crap>);
+            let da = *it;
+            da.into_iter()
+        }
+        // todo!() //it.into_iter()
     }
 }
 
@@ -133,11 +148,11 @@ impl Value {
             Type::Lst(t) if Type::Num == *t => match self {
                 Value::Str(v) => Some(Value::Lst(List::new(
                     Type::Num,
-                    v.chars().map(|c| Value::Num((c as u32) as Number)),
+                    &Box::new(v.chars().map(|c| Value::Num((c as u32) as Number))),
                 ))),
                 Value::Lst(v) => Some(Value::Lst(List::new(
                     *t.clone(),
-                    v.into_iter().map(|it| it.coerse_or_keep(Type::Num)),
+                    &Box::new(v.into_iter().map(|it| it.coerse_or_keep(Type::Num))),
                 ))),
 
                 _ => None,
@@ -145,18 +160,18 @@ impl Value {
             Type::Lst(t) if Type::Str == *t => match self {
                 Value::Str(v) => Some(Value::Lst(List::new(
                     Type::Str,
-                    v.chars().map(|c| Value::Str(c.to_string())),
+                    &Box::new(v.chars().map(|c| Value::Str(c.to_string()))),
                 ))),
                 Value::Lst(v) => Some(Value::Lst(List::new(
                     *t.clone(),
-                    v.into_iter().map(|it| it.coerse_or_keep(Type::Str)),
+                    &Box::new(v.into_iter().map(|it| it.coerse_or_keep(Type::Str))),
                 ))),
                 _ => None,
             },
             Type::Lst(t) => match self {
                 Value::Lst(v) => Some(Value::Lst(List::new(
                     *t.clone(),
-                    v.into_iter().map(|it| it.coerse_or_keep(*t.clone())),
+                    &Box::new(v.into_iter().map(|it| it.coerse_or_keep(*t.clone()))),
                 ))),
                 _ => None,
             },
@@ -316,15 +331,15 @@ impl_from_into_value! { Str <-> &str:
 }
 
 impl_from_into_value! { Lst <-> Vec<Number>:
-    from: |o: Vec<Number>| List::new(Type::Num, o.into_iter().map(Value::from));
+    from: |o: Vec<Number>| List::new(Type::Num, &Box::new(o.into_iter().map(Value::from)));
     into: |u: List| u.into_iter().map(Number::from).collect();
 }
 impl_from_into_value! { Lst <-> Vec<String>:
-    from: |o: Vec<String>| List::new(Type::Num, o.into_iter().map(Value::from));
+    from: |o: Vec<String>| List::new(Type::Num, &Box::new(o.into_iter().map(Value::from)));
     into: |u: List| u.into_iter().map(String::from).collect();
 }
 impl_from_into_value! { Lst <-> Vec<&str>:
-    from: |o: Vec<&str>| List::new(Type::Num, o.into_iter().map(Value::from));
+    from: |o: Vec<&str>| List::new(Type::Num, &Box::new(o.into_iter().map(Value::from)));
     into: |u: List| u.into_iter().map(|i| i.into()).collect();
 }
 
@@ -347,19 +362,19 @@ impl_from_into_value! { Fun <-> Function:
 
 impl FromIterator<Number> for Value {
     fn from_iter<T: IntoIterator<Item = Number>>(iter: T) -> Self {
-        Value::Lst(List::new(Type::Num, iter.into_iter().map(Value::from)))
+        Value::Lst(List::new(Type::Num, &Box::new(iter.into_iter().map(Value::from))))
     }
 }
 
 impl FromIterator<String> for Value {
     fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
-        Value::Lst(List::new(Type::Str, iter.into_iter().map(Value::from)))
+        Value::Lst(List::new(Type::Str, &Box::new(iter.into_iter().map(Value::from))))
     }
 }
 
 impl<'a> FromIterator<&'a str> for Value {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
-        Value::Lst(List::new(Type::Str, iter.into_iter().map(Value::from)))
+        Value::Lst(List::new(Type::Str, &Box::new(iter.into_iter().map(Value::from))))
     }
 }
 
@@ -396,12 +411,12 @@ impl From<Value> for Vec<Value> {
 
 impl<const L: usize> From<[Number; L]> for Value {
     fn from(o: [Number; L]) -> Self {
-        Value::Lst(List::new(Type::Num, o.into_iter().map(Value::from)))
+        Value::Lst(List::new(Type::Num, &Box::new(o.into_iter().map(Value::from))))
     }
 }
 
 impl<const L: usize> From<[String; L]> for Value {
     fn from(o: [String; L]) -> Self {
-        Value::Lst(List::new(Type::Str, o.into_iter().map(Value::from)))
+        Value::Lst(List::new(Type::Str, &Box::new(o.into_iter().map(Value::from))))
     }
 }
