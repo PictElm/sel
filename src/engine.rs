@@ -1,5 +1,7 @@
 use std::{fmt, vec};
 
+use crate::runtime::Environ;
+
 // NOTE: `Debug` is kept for rust-level debugging,
 //       `Display` is used for sel-level debugging
 //       as such, the actual output for a type of
@@ -37,7 +39,7 @@ pub struct Function {
     pub name: String,
     pub maps: (Type, Type),
     pub args: Vec<Value>,            // YYY: would like it private
-    pub func: fn(Function) -> Value, // YYY: would like it private (maybe `fn(Function, Vec<Value>) -> Value`)
+    pub func: fn(Environ, Function) -> (Environ, Value), // YYY: would like it private (maybe `fn(Function, Vec<Value>) -> Value`)
 }
 
 impl List {
@@ -58,7 +60,7 @@ impl IntoIterator for List {
 }
 
 impl Function {
-    pub fn apply(mut self, arg: Value) -> Value {
+    pub fn apply(mut self, (env, arg): (Environ, Value)) -> (Environ, Value) {
         let given_type = arg.typed();
 
         match arg.coerse(self.maps.0.clone()) {
@@ -72,7 +74,7 @@ impl Function {
 
             Some(correct) => {
                 self.args.push(correct);
-                (self.func)(self)
+                (self.func)(env, self)
             }
         }
     }
@@ -248,11 +250,12 @@ impl fmt::Display for Value {
 
 impl fmt::Debug for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Function({:?}, {:?}, {:?}, {:?})",
-            self.name, self.maps, self.args, self.func
-        )
+        // write!(
+        //     f,
+        //     "Function({:?}, {:?}, {:?}, {:?})",
+        //     self.name, self.maps, self.args, self.func
+        // )
+        write!(f, "some function")
     }
 }
 

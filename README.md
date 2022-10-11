@@ -4,7 +4,7 @@ Yet an other `awk`-ish command line tool, with a
 > if anybody knows how to this, please send help:
 > ```rust
 > pub struct List {
->     items: dyn Iterator<Item=Value>
+>     items: Iterator<Item=Value>
 > }
 > ```
 

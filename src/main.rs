@@ -30,7 +30,7 @@ fn lookup(name: String) {
 fn process(script: String, check_only: bool) {
     let prelude = get_prelude();
     let env = Environ::new(&prelude);
-    let app = parse_string(&script, &env).result();
+    let (env, app) = parse_string(&script).result(env);
 
     if check_only {
         let in_type = app.funcs.first().unwrap().maps.0.clone();
@@ -42,7 +42,7 @@ fn process(script: String, check_only: bool) {
     for line in stdin().lines() {
         match line {
             Ok(it) => {
-                let res = app.apply(it);
+                let (env, res) = app.apply(env, it);
                 println!("{}", res)
             }
             Err(e) => panic!("{}", e),

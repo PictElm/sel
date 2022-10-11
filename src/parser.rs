@@ -2,7 +2,8 @@ use std::{iter::Peekable, str::Chars, vec};
 
 use crate::{
     engine::{Function, Value},
-    runtime::{Application, Environ}, prelude::PreludeLookup,
+    runtime::{Application, Environ},
+    prelude::PreludeLookup,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -154,31 +155,32 @@ impl Lex for Vec<Token> {
     }
 }
 
-#[derive(Clone)]
-pub struct Parser<'a, T>(Peekable<T::TokenIter>, &'a Environ<'a>)
+// #[derive(Clone)]
+pub struct Parser<T>(Peekable<T::TokenIter>)
 where
     T: Lex;
 
-pub fn parse_string<'a>(script: &'a String, env: &'a Environ<'a>) -> Parser<'a, &'a String> {
-    Parser(script.lex().peekable(), env)
+pub fn parse_string<'a>(script: &'a String) -> Parser<&'a String> {
+    Parser(script.lex().peekable())
 }
-fn parse_vec<'a>(tokens: Vec<Token>, env: &'a Environ<'a>) -> Parser<'a, Vec<Token>> {
-    Parser(tokens.lex().peekable(), env)
+fn parse_vec(tokens: Vec<Token>) -> Parser<Vec<Token>> {
+    Parser(tokens.lex().peekable())
 }
 
-impl<'a, T> Parser<'a, T>
+impl<T> Parser<T>
 where
     T: Lex,
 {
-    pub fn result(self) -> Application<'a> {
-        Application::new(self.1, self)
+    pub fn result(self, env: Environ) -> (Environ, Application) {
+        let (env, app) = self.collect_values(env);
+        (env, app.into_iter().collect())
     }
 
-    fn as_value(self) -> Value {
-        let fs: Vec<Value> = self.collect();
+    fn as_value(self, env: Environ) -> (Environ, Value) {
+        let (env, fs) = self.collect_values(env);
 
         if 1 == fs.len() {
-            return fs.into_iter().next().unwrap();
+            return (env, fs.into_iter().next().unwrap());
         }
 
         let firstin = fs
@@ -196,17 +198,17 @@ where
             })
             .unwrap();
 
-        Value::Fun(Function {
+        (env, Value::Fun(Function {
             name: "(script)".to_string(),
             maps: (firstin, lastout),
             args: fs,
-            func: |this| {
+            func: |env, this| {
                 let arg = this.args.last().unwrap().clone();
                 this.args[..this.args.len() - 1]
                     .iter()
-                    .fold(arg, |r, f| Function::from(f.clone()).apply(r))
+                    .fold((env, arg), |r, f| Function::from(f.clone()).apply(r))
             },
-        })
+        }))
     } // fn result
 
     /// atom ::= literal
@@ -215,51 +217,43 @@ where
     ///        | binop atom
     ///        | subscript
     /// subscript ::= '[' [atom binop atom | _elements1] ']'
-    fn next_atom(&mut self) -> Option<Value> {
+    fn next_atom(&mut self, env: Environ) -> Option<(Environ, Value)> {
         match self.0.next() {
             None | Some(Token::Composition) => None,
 
-            Some(Token::Literal(value)) => Some(value.clone()),
+            Some(Token::Literal(value)) => Some((env, value.clone())),
 
-            Some(Token::Name(name)) => Some(
-                self.1
-                    .prelude
+            Some(Token::Name(name)) => Some((
+                env,
+                env.prelude
                     .lookup_name(name.to_string())
                     .expect(&format!("Unknown name '{name}'")),
-            ),
+            )),
 
             Some(Token::Operator(Operator::Unary(un))) => {
-                let unf = self.1.prelude.lookup_unary(un);
+                let unf = env.prelude.lookup_unary(un);
                 let (opr, is_opr_bin) =
                     if let Some(Token::Operator(Operator::Binary(bin))) = self.0.peek() {
-                        let r = self.1.prelude.lookup_binary(*bin).into();
+                        let r = env.prelude.lookup_binary(*bin, env);
                         self.0.next();
                         (r, true)
                     } else {
-                        (
-                            self.next_atom()
-                                .expect(&format!("Missing argument for unary {un:?}")),
-                            false,
-                        )
+                        (self.next_atom(env).expect(&format!("Missing argument for unary {un:?}")), false)
                     };
                 let r = unf.apply(opr);
-                Some(if is_opr_bin {
-                    let f: Function = r.into();
-                    f.apply(
-                        self.next_atom()
-                            .expect(&format!("Missing argument for binary after unary {un:?}")),
-                    )
-                } else {
-                    r
-                })
+                Some(
+                    if is_opr_bin {
+                        let f: Function = r.1.into();
+                        f.apply(self.next_atom(env).expect(&format!("Missing argument for binary after unary {un:?}")))
+                    } else { r }
+                )
             }
 
-            Some(Token::Operator(Operator::Binary(bin))) => Some(
-                self.1.prelude.lookup_binary(bin).apply(
-                    self.next_atom()
-                        .expect(&format!("Missing argument for binary {bin:?}")),
-                ),
-            ),
+            Some(Token::Operator(Operator::Binary(bin))) => Some({
+                let (env, val) = env.prelude.lookup_binary(bin, env);
+                let binf: Function = val.into();
+                binf.apply(self.next_atom(env).expect(&format!("Missing argument for binary {bin:?}")))
+            }),
 
             Some(Token::SubscriptBegin) => {
                 let mut lvl: u32 = 1;
@@ -286,41 +280,34 @@ where
                     0 == lvl,
                     "Unbalanced subscript expression: missing closing ']'"
                 );
-                Some(parse_vec(tokens, self.1).as_value())
+                Some(parse_vec(tokens).as_value(env))
             }
             Some(Token::SubscriptEnd) => {
                 panic!("Unbalanced subscript expression: missing opening '['")
             }
         } // match lexer next
     } // next_atom
-} // impl Parser
-
-impl<'a, T> Iterator for Parser<'a, T>
-where
-    T: Lex,
-{
-    type Item = Value;
 
     /// script ::= _elements1
     /// _elements1 ::= element {',' element} [',']
     /// element ::= atom {atom}
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.next_atom() {
+    fn next_value(&mut self, env: Environ) -> Option<(Environ, Value)> {
+        match self.next_atom(env) {
             None => None,
 
             Some(mut base) => {
                 loop {
-                    match self.next_atom() {
-                        None => {
-                            break;
-                        }
-                        Some(arg) => {
-                            base = Function::from(base).apply(arg);
-                        }
+                    match self.next_atom(env) {
+                        None => { break; }
+                        Some(opr) => { base = Function::from(base.1).apply(opr); }
                     }
                 }
                 Some(base)
             }
         } // match next_atom
+    } // next_value
+
+    fn collect_values(&mut self, env: Environ) -> (Environ, Vec<Value>) {
+        todo!()
     }
-}
+} // impl Parser
