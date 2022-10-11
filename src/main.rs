@@ -1,14 +1,18 @@
 use std::{env, io::stdin};
 
+
+use runtime::Environ;
+
 use crate::{
     engine::Type,
-    parser::{parse_string, Application},
+    parser::parse_string,
     prelude::{get_prelude, PreludeLookup},
 };
 
 mod engine;
 mod parser;
 mod prelude;
+mod runtime;
 
 fn usage(prog: String) {
     println!("Usage: {prog} [-l <name> | [-c] <script>...]");
@@ -16,20 +20,22 @@ fn usage(prog: String) {
 
 fn lookup(name: String) {
     if let Some(entry) = get_prelude().lookup(name) {
-        println!("{} :: {}\n\t{}", entry.name, entry.typedef, entry.docstr)
+        println!("{} :: {}", entry.name, entry.typedef);
+        println!("\t{}", entry.docstr);
     } else {
-        println!("this name was not found in the prelude")
+        println!("this name was not found in the prelude");
     }
 }
 
 fn process(script: String, check_only: bool) {
     let prelude = get_prelude();
-    let app: Application = parse_string(&script, &prelude).collect();
+    let env = Environ::new(&prelude);
+    let app = parse_string(&script, &env).result();
 
     if check_only {
         let in_type = app.funcs.first().unwrap().maps.0.clone();
         let out_type = app.funcs.last().unwrap().maps.1.clone();
-        println!(":: {}", Type::Fun(Box::new(in_type), Box::new(out_type)));
+        println!("(script) :: {}", Type::Fun(Box::new(in_type), Box::new(out_type)));
         return;
     }
 

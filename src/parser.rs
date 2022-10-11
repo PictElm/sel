@@ -2,7 +2,7 @@ use std::{iter::Peekable, str::Chars, vec};
 
 use crate::{
     engine::{Function, Value},
-    prelude::PreludeLookup,
+    runtime::{Application, Environ}, prelude::PreludeLookup,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -155,48 +155,25 @@ impl Lex for Vec<Token> {
 }
 
 #[derive(Clone)]
-pub struct Parser<'a, T, L>(Peekable<T::TokenIter>, &'a L)
+pub struct Parser<'a, T>(Peekable<T::TokenIter>, &'a Environ<'a>)
+where
+    T: Lex;
+
+pub fn parse_string<'a>(script: &'a String, env: &'a Environ<'a>) -> Parser<'a, &'a String> {
+    Parser(script.lex().peekable(), env)
+}
+fn parse_vec<'a>(tokens: Vec<Token>, env: &'a Environ<'a>) -> Parser<'a, Vec<Token>> {
+    Parser(tokens.lex().peekable(), env)
+}
+
+impl<'a, T> Parser<'a, T>
 where
     T: Lex,
-    L: PreludeLookup;
-
-pub fn parse_string<'a, L>(script: &'a String, prelude: &'a L) -> Parser<'a, &'a String, L>
-where
-    L: PreludeLookup,
 {
-    Parser(script.lex().peekable(), prelude)
-}
-fn parse_vec<'a, L>(tokens: Vec<Token>, prelude: &'a L) -> Parser<'a, Vec<Token>, L>
-where
-    L: PreludeLookup,
-{
-    Parser(tokens.lex().peekable(), prelude)
-}
-
-impl FromIterator<Value> for Application {
-    fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
-        Application {
-            funcs: iter
-                .into_iter()
-                .map(|v| match v {
-                    Value::Fun(f) => f,
-                    other => {
-                        println!("trying to build an application from functions,");
-                        println!("but got: {other}");
-                        panic!("type error");
-                    }
-                })
-                .collect(),
-            env: (),
-        }
+    pub fn result(self) -> Application<'a> {
+        Application::new(self.1, self)
     }
-}
 
-impl<'a, T, L> Parser<'a, T, L>
-where
-    T: Lex,
-    L: PreludeLookup,
-{
     fn as_value(self) -> Value {
         let fs: Vec<Value> = self.collect();
 
@@ -246,15 +223,16 @@ where
 
             Some(Token::Name(name)) => Some(
                 self.1
+                    .prelude
                     .lookup_name(name.to_string())
                     .expect(&format!("Unknown name '{name}'")),
             ),
 
             Some(Token::Operator(Operator::Unary(un))) => {
-                let unf = self.1.lookup_unary(un);
+                let unf = self.1.prelude.lookup_unary(un);
                 let (opr, is_opr_bin) =
                     if let Some(Token::Operator(Operator::Binary(bin))) = self.0.peek() {
-                        let r = self.1.lookup_binary(*bin).into();
+                        let r = self.1.prelude.lookup_binary(*bin).into();
                         self.0.next();
                         (r, true)
                     } else {
@@ -277,7 +255,7 @@ where
             }
 
             Some(Token::Operator(Operator::Binary(bin))) => Some(
-                self.1.lookup_binary(bin).apply(
+                self.1.prelude.lookup_binary(bin).apply(
                     self.next_atom()
                         .expect(&format!("Missing argument for binary {bin:?}")),
                 ),
@@ -317,10 +295,9 @@ where
     } // next_atom
 } // impl Parser
 
-impl<'a, T, L> Iterator for Parser<'a, T, L>
+impl<'a, T> Iterator for Parser<'a, T>
 where
     T: Lex,
-    L: PreludeLookup,
 {
     type Item = Value;
 
@@ -345,20 +322,5 @@ where
                 Some(base)
             }
         } // match next_atom
-    }
-}
-
-// YYY: more private fields
-pub struct Application {
-    pub funcs: Vec<Function>,
-    pub env: (),
-}
-
-impl Application {
-    pub fn apply(&self, line: String) -> String {
-        self.funcs
-            .iter()
-            .fold(Value::Str(line), |acc, cur| cur.clone().apply(acc))
-            .as_text()
     }
 }

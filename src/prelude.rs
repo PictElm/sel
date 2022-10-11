@@ -50,9 +50,9 @@ pub trait PreludeLookup {
 macro_rules! make_prelude {
     ($(($name:ident :: $($ty:tt)->+ = $def:expr; $doc:literal)),*,) => {
         #[doc(hidden)]
-        struct _Prelude(Vec<PreludeEntry>);
+        pub struct Prelude(Vec<PreludeEntry>);
 
-        impl PreludeLookup for _Prelude {
+        impl PreludeLookup for Prelude {
             fn list(&self) -> Vec<&PreludeEntry> {
                 self.0.iter().collect()
             }
@@ -66,8 +66,8 @@ macro_rules! make_prelude {
         }
 
         $(#[doc = concat!("* `", stringify!($name :: $($ty)->+), "` ", $doc, "\n")])*
-        pub fn get_prelude() -> impl PreludeLookup {
-            _Prelude(vec![
+        pub fn get_prelude() -> Prelude {
+            Prelude(vec![
                 $(make_prelude!(@ $name :: $($ty)->+ = $def; $doc)),*
             ])
         }
