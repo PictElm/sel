@@ -7,61 +7,70 @@
  */
 
 #include <ostream>
-
 #include <istream>
 #include <string>
+#include <vector>
+#include <iterator>
 
 namespace sel {
 
   enum class Ty {
-    UNK, // str
-    NUM, // 0
-    STR, // 0
-    LST, // 1
-    FUN, // 2
-    CPL, // 2
+    UNK,
+    NUM,
+    STR,
+    LST,
+    FUN,
   };
   enum TyFlag {
-    IS_FIN = 0, // (0, and as such default)
+    IS_FIN = 0,
     IS_INF = 1,
-    // IS_SIMPLE = 2, // no complex nested type(s), no dynamic alloc
+    IS_TPL = 2,
   };
 
   /**
    * Represents a type (yey). Use the [..]Type function
    * to construct/parse.
    */
-  struct Type { // TODO: maybe could do with cleaner move 'compliance' (eg. operator=) ((or none at all))
-    Ty base = Ty::UNK;
+  struct Type {
+    Ty base = Ty::UNK; // YYY: meh
     union P {
       std::string* name;
-      Type* box_has; // Ty has;
-      Type* box_pair[2]; // Ty pair[2];
+      std::vector<Type*>* box_has;
+      Type* box_pair[2];
     } p = {.name=nullptr};
-    uint8_t flags = 0;
+    uint8_t flags = TyFlag::IS_FIN;
 
-    Type() { }
+    Type();
     Type(Ty base, Type::P p, uint8_t flags);
-    Type(Type const& ty); // REM: implementation is commented-out
+    Type(Type const& ty);
     Type(Type&& ty) noexcept;
     ~Type();
 
     bool operator==(Type const& other) const;
     bool operator!=(Type const& other) const;
 
-    Type* has() const { return p.box_has; }
-    Type* fst() const { return p.box_pair[0]; }
-    Type* snd() const { return p.box_pair[1]; }
+    std::vector<Type*> const& has() { return *p.box_has; }
+    Type const& from() const { return *p.box_pair[0]; }
+    Type const& to() const { return *p.box_pair[1]; }
 
-    bool isInf() { return TyFlag::IS_INF & flags; }
+    bool isInfinite() { return TyFlag::IS_INF & flags; }
+    bool isTuple() { return TyFlag::IS_TPL & flags; }
   };
 
   Type unkType(std::string* name);
   Type numType();
   Type strType(TyFlag is_inf);
+
+  Type lstType(Ty has, TyFlag is_inf); //
   Type lstType(Type* has, TyFlag is_inf);
-  Type funType(Type* fst, Type* snd);
-  Type cplType(Type* fst, Type* snd);
+  Type lstType(std::vector<Ty> has, TyFlag is_inf, TyFlag is_tpl); //
+  Type lstType(std::vector<Type*>* has, TyFlag is_inf, TyFlag is_tpl);
+  Type lstType(TyFlag is_inf, TyFlag is_tpl); //
+
+  Type funType(Ty from, Ty to); //
+  Type funType(Ty from, Type* to); //
+  Type funType(Type* from, Ty to); //
+  Type funType(Type* from, Type* to);
 
   /**
    * Parse a type from the given stream. The overload to

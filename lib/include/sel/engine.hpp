@@ -87,10 +87,20 @@ namespace sel {
      */
     virtual std::ostream& stream(std::ostream& out) = 0;
     /**
-     * Resets the internal state so the string may be
+     * `true` if there is no more bytes to stream. Calling
+     * `stream` or `full` at this point is probably
+     * undefined.
+     */
+    virtual bool end() const = 0;
+    /**
+     * Reset the internal state so the string may be
      * streamed again.
      */
     virtual void rewind() = 0;
+    /**
+     * Stream the complete string of bytes.
+     */
+    virtual std::ostream& full(std::ostream& out) = 0;
   };
 
   /**
@@ -110,7 +120,7 @@ namespace sel {
     /**
      * Move to (compute, etc..) the next value.
      */
-    virtual Lst* operator++() = 0;
+    virtual Lst& operator++() = 0;
     /**
      * `true` if there is no next value to get. Calling
      * `next` at this point is probably undefined.
@@ -140,42 +150,6 @@ namespace sel {
       : Val(funType(new Type(std::move(fst)), new Type(std::move(snd))))
     { }
     virtual Val* operator()(Environment& env, Val* arg) = 0;
-  };
-
-  // /**
-  //  * Abstract class for `Cpl`-type compatible values.
-  //  * Couples have a `first` and a `second`. Yeah, that's
-  //  * pretty much it. (Althrough these are often refered
-  //  * to as 'fst' and 'snd'.)
-  //  */
-  // class Cpl : public Val {
-  // public:
-  //   Cpl(Type&& fst, Type&& snd)
-  //     : Val(cplType(new Type(std::move(fst)), new Type(std::move(snd))))
-  //   { }
-  //   virtual Val* first() = 0;
-  //   virtual Val* second() = 0;
-  // };
-
-  /**
-   * An application is constructed from parsing a user
-   * script. It serializes back to an equivalent script
-   * (although it may not be strictly equal). The default
-   * constructor automatically creates a new environment.
-   */
-  class Application {
-  private:
-    Environment env;
-    std::vector<Fun*> funcs;
-
-  public:
-    Application()
-      : env(*this)
-      , funcs()
-    { }
-
-    void push_fun(Fun* f) { funcs.push_back(f); }
-    Environment& environ() { return env; }
   };
 
 } // namespace sel

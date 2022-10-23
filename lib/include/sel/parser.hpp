@@ -59,15 +59,33 @@ namespace sel {
     std::vector<Fun*> const f;
   public:
     FunChain(std::vector<Fun*> f)
-      : Fun(Type(*f[0]->type().fst()), Type(*f[f.size()-1]->type().snd()))
+      : Fun(Type(f[0]->type().from()), Type(f[f.size()-1]->type().to()))
       , f(f)
     { }
     Val* operator()(Environment& env, Val* arg) override; //
     void accept(Visitor& v) const override;
   };
 
-  std::ostream& operator<<(std::ostream& out, Application const& ty);
-  std::istream& operator>>(std::istream& in, Application& tt);
+  /**
+   * An application is constructed from parsing a user
+   * script. It serializes back to an equivalent script
+   * (although it may not be strictly equal). The default
+   * constructor automatically creates a new environment.
+   */
+  class Application {
+  private:
+    Environment env;
+    std::vector<Fun*> funcs;
+
+  public:
+    Application()
+      : env(*this)
+      , funcs()
+    { }
+
+    friend std::ostream& operator<<(std::ostream& out, Application const& ty);
+    friend std::istream& operator>>(std::istream& in, Application& tt);
+  };
 
 } // namespace sel
 

@@ -3,6 +3,9 @@
 TEST(parseType) {
   char const* source = "fn :: (Num -> Str*) -> Num -> ([Str]*, [Str*])";
 
+  auto tpl = new std::vector<Type*>();
+  tpl->push_back(new Type(lstType(new Type(strType(TyFlag::IS_FIN)), TyFlag::IS_INF)));
+  tpl->push_back(new Type(lstType(new Type(strType(TyFlag::IS_INF)), TyFlag::IS_FIN)));
   Type const expect = funType(
     new Type(funType(
       new Type(numType()),
@@ -10,10 +13,7 @@ TEST(parseType) {
     )),
     new Type(funType(
       new Type(numType()),
-      new Type(cplType(
-        new Type(lstType(new Type(strType(TyFlag::IS_FIN)), TyFlag::IS_INF)),
-        new Type(lstType(new Type(strType(TyFlag::IS_INF)), TyFlag::IS_FIN))
-      ))
+      new Type(lstType(tpl, TyFlag::IS_FIN, TyFlag::IS_TPL))
     ))
   );
 

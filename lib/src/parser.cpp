@@ -202,6 +202,7 @@ namespace sel {
     }
 
     while (!in.eof() && isspace(in.peek())) in.get();
+    std::cerr << "operator>>Token " << t << std::endl;
     return in;
   }
 
@@ -219,7 +220,7 @@ namespace sel {
 
     switch (t.type) {
       case Token::Type::NAME:
-        lookup_name(env, *t.as.name);
+        val = lookup_name(env, *t.as.name);
         lexer++;
         break;
 
@@ -300,7 +301,9 @@ namespace sel {
   }
 
   std::ostream& operator<<(std::ostream& out, Application const& app) {
-    throw "TODO: operator<< for Application\n";
+    out << "app of " << app.funcs.size() << " function(s)\n";
+    for (auto const& it : app.funcs)
+      out << "\t" << it->type() << "(Val*" << raw(it) << ")\n";
     return out;
   }
 
@@ -308,9 +311,9 @@ namespace sel {
     std::istream_iterator<Token> lexer(in);
 
     while (true) {
-      Val* current = parseElement(app.environ(), lexer);
+      Val* current = parseElement(app.env, lexer);
       if (!current) break;
-      app.push_fun(coerse<Fun>(current));
+      app.funcs.push_back(coerse<Fun>(current));
     }
 
     return in;
