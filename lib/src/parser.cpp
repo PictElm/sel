@@ -498,9 +498,9 @@ namespace sel {
       Token t = *++lexer;
 
       if (Token::Type::NAME != t.type) expected("name", t);
-      if (lookup(app, *t.as.name)) {
-        // range of the error: t.loc..t.loc+()
-        throw TypeError("cannot redefine already known name '" + *t.as.name + "'");
+      if (lookup(app, *t.as.name) || "def" != *t.as.name) {
+        //throw TypeError
+        throw ParseError("cannot redefine already known name '" + *t.as.name + "'", t.loc, t.len);
       }
 
       lexer++;
